@@ -6,7 +6,7 @@ import operator
 
 def extract_solution(solution_str):
     """Extract the equation from the solution string."""
-
+    solution_str = solution_str.split('\n')[-1]
     answer_pattern = r'<answer>(.*?)</answer>'
     match = re.finditer(answer_pattern, solution_str)
     matches = list(match)
@@ -14,7 +14,6 @@ def extract_solution(solution_str):
         final_answer = matches[-1].group(1).strip()
     else:
         final_answer = None
-    print(final_answer)
     return final_answer
 
 
