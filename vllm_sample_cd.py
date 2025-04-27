@@ -10,6 +10,7 @@ from vllm import LLM, SamplingParams
 from datasets import load_dataset
 
 from transformers import AutoTokenizer
+import countdown_verifier
 
 def parse_args():
     parser = OptionParser()
