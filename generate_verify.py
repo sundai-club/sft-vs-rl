@@ -1,6 +1,7 @@
 import countdown_verifier
 import os
 import pandas as pd
+from transformers import AutoTokenizer
 
 from vllm import LLM, SamplingParams
 
@@ -28,13 +29,18 @@ def generate_batch(llm_prompts):
 
 def generate_prompts(df):
     prompts = []
+    system_prompt = "A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer."
+    user_prompt = "User: Using the numbers {numbers}, create an equation that equals {target}. You can use basic arithmetic operations (+, -, *, /) and each number can only be used once. Show your work in <think> </think> tags. And return the final answer in <answer> </answer> tags, for example <answer> (1 + 2) / 3 </answer>."
+    tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct')
     for index, row in df.iterrows():
         target = row['target']
         numbers = row['nums']
-        prompt = f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer.
-User: Using the numbers {numbers}, create an equation that equals {target}. You can use basic arithmetic operations (+, -, *, /) and each number can only be used once. Show your work in <think> </think> tags. And return the final answer in <answer> </answer> tags, for example <answer> (1 + 2) / 3 </answer>.
-Assistant: Let me solve this step by step.
-<think>"""
+        
+        message = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt.format(numbers=numbers, target=target)}
+        ]
+        prompt = tokenizer.apply_chat_template(message, tokenize=False)
         prompts.append(prompt)
     return prompts
 
