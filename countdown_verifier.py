@@ -6,6 +6,7 @@ import operator
 
 def extract_solution(solution_str):
     """Extract the equation from the solution string."""
+
     answer_pattern = r'<answer>(.*?)</answer>'
     match = re.finditer(answer_pattern, solution_str)
     matches = list(match)
