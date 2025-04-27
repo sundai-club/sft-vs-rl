@@ -28,7 +28,7 @@ def load_messages(parquet_file):
     dataset = load_dataset("parquet", data_files=parquet_file)
     messages_list = dataset['train']['messages']
     targets = dataset['train']['target']
-    numbers = dataset['train']['numbers']
+    numbers = dataset['train']['nums']
     ground_truths = [{'target': target, 'numbers': numbers} for target, numbers in zip(targets, numbers)]
     return messages_list, ground_truths
 
