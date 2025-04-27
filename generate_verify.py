@@ -5,7 +5,7 @@ import pandas as pd
 from vllm import LLM, SamplingParams
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-PROMPT_BATCH_SIZE = 16
+PROMPT_BATCH_SIZE = 32
 NUM_PASSES = 256
 
 def generate_batch(llm_prompts):
@@ -41,9 +41,14 @@ Assistant: Let me solve this step by step.
 def main(filename='train.parquet'):
     # Load your DataFrame here
     df = pd.read_parquet(filename)
-    df = df.sample(1024, random_state=42)
+
+    START_IDX = 0
+    END_IDX = 16
+
+    df = df.iloc[START_IDX:END_IDX]
     
     df['nums'] = df['nums'].apply(lambda x: [int(num) for num in x])
+    
     DATASET_SIZE = len(df)
     
     llm_prompts = generate_prompts(df)
@@ -76,6 +81,9 @@ def main(filename='train.parquet'):
         # Save the scores to a file
         scores_df = pd.DataFrame(scores)
         scores_df.to_parquet('scores.parquet', index=False)
+        
+        pass_accuracy = (scores_df.sum(axis=1) > 0.1).mean()
+        print(f"Pass accuracy: {pass_accuracy:.4f}")
         
         
 if __name__ == "__main__":
