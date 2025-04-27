@@ -55,25 +55,34 @@ def main(args):
             return
 
     total_samples = len(all_prompts)
-    if args.n_test is not None and 0 < args.n_test < total_samples:
-        print(f"Randomly sampling {args.n_test} samples from the dataset (total: {total_samples}).")
-        random.seed(args.random_seed) # for reproducibility
-        sample_indices = random.sample(range(total_samples), args.n_test)
-        prompts = [all_prompts[i] for i in sample_indices]
-        ground_truths = [all_ground_truths[i] for i in sample_indices]
-    else:
-        if args.n_test is not None and args.n_test >= total_samples:
-             print(f"n_test ({args.n_test}) >= total samples ({total_samples}). Using all samples.")
-        elif args.n_test is not None:
-             print(f"Invalid n_test value ({args.n_test}). Using all samples.")
-        else:
-             print("n_test not specified. Using all samples.")
+
+    # --- Start of Chunking Logic ---
+    if args.chunk_index is None or args.total_chunks is None or args.chunk_index < 0 or args.chunk_index >= args.total_chunks:
+        print(f"Invalid chunking arguments: chunk_index={args.chunk_index}, total_chunks={args.total_chunks}. Using all samples.")
         prompts = all_prompts
         ground_truths = all_ground_truths
+    else:
+        chunk_size = math.ceil(total_samples / args.total_chunks) # Ensure all samples are covered
+        start_index = args.chunk_index * chunk_size
+        end_index = min((args.chunk_index + 1) * chunk_size, total_samples) # Prevent index out of bounds
+        
+        if start_index >= total_samples:
+             print(f"Warning: Calculated start index ({start_index}) is >= total samples ({total_samples}) for chunk {args.chunk_index}. This chunk will be empty.")
+             prompts = []
+             ground_truths = []
+        else:
+            print(f"Processing chunk {args.chunk_index}/{args.total_chunks-1}: samples {start_index} to {end_index-1} (total: {total_samples})")
+            prompts = all_prompts[start_index:end_index]
+            ground_truths = all_ground_truths[start_index:end_index]
+    # --- End of Chunking Logic ---
+    
+    if not prompts:
+        print("No prompts selected for this chunk. Exiting.")
+        sys.exit(0) # Exit gracefully if no work to do
 
-    print(f"Running evaluation on {len(prompts)} samples.")
+    print(f"Running evaluation on {len(prompts)} samples for this chunk.")
 
-    llm = LLM(model=args.model_path, trust_remote_code=True, tensor_parallel_size=args.tensor_parallel_size)
+    llm = LLM(model=args.model_path, trust_remote_code=True, tensor_parallel_size=args.tensor_parallel_size, enable_prefix_caching=True)
     print(f"Initialized LLM: {args.model_path}")
 
     max_k = max(args.k_values)
@@ -166,8 +175,8 @@ if __name__ == "__main__":
     parser.add_argument("--tensor_parallel_size", type=int, default=1, help="Number of GPUs for tensor parallelism.")
     parser.add_argument("--results_output_path", type=str, default=None, help="Optional path to save detailed evaluation results (JSON).")
     parser.add_argument("--pass_k_output_path", type=str, default=None, help="Optional path to save pass@k results (CSV).")
-    parser.add_argument("--n_test", type=int, default=None, help="Number of samples to randomly select from the test set. If None or invalid, use all samples.")
-    parser.add_argument("--random_seed", type=int, default=42, help="Random seed for test set sampling.")
+    parser.add_argument("--chunk_index", type=int, default=None, help="Index of the current data chunk (0-based).")
+    parser.add_argument("--total_chunks", type=int, default=None, help="Total number of data chunks.")
     
     args = parser.parse_args()
 
