@@ -1,82 +1,99 @@
-import countdown_verifier
-import os
-import pandas as pd
-from transformers import AutoTokenizer
+import re
+import random
+import ast
+import operator
 
-from vllm import LLM, SamplingParams
+def extract_solution(solution_str):
+    """Extract the equation from the solution string."""
+    solution_str = solution_str.split('\n')[-1]
+    answer_pattern = r'<answer>(.*?)</answer>'
+    match = re.finditer(answer_pattern, solution_str)
+    matches = list(match)
+    if matches:
+        final_answer = matches[-1].group(1).strip()
+    else:
+        final_answer = None
+    return final_answer
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-PROMPT_BATCH_SIZE = 16384
-NUM_PASSES = 256
+def validate_equation(equation_str, available_numbers):
+    """Validate that equation only uses available numbers and each number once."""
+    try:
+        # Extract all numbers from the equation
+        numbers_in_eq = [int(n) for n in re.findall(r'\d+', equation_str)]
+        
+        # Check if all numbers in equation are available
+        available_numbers = sorted(available_numbers)
+        numbers_in_eq = sorted(numbers_in_eq)
+        
+        # Each number should be used exactly once
+        return numbers_in_eq == available_numbers
+    except:
+        return False
 
-def generate_batch(llm_prompts):
-    # wrap the sync calls in threads to avoid blocking the event loop
-    model_name = 'Qwen/Qwen2.5-1.5B-Instruct'
-    llm = LLM(
-        model=model_name, 
-        gpu_memory_utilization=0.95, 
-        max_model_len=2048,
-        tensor_parallel_size=1, 
-        enable_prefix_caching=True
-    )
-    sampling_params = SamplingParams(
-        max_tokens = 2000,
-        n=NUM_PASSES, # Change for best of 256 eval
-        temperature = 0.7
-    )
-    responses = llm.generate(llm_prompts, sampling_params, use_tqdm=True)
-    return [[output.text for output in response.outputs]for response in responses]
+def evaluate_equation(equation_str):
+    """Safely evaluate the arithmetic equation using eval() with precautions."""
+    try:
+        # Define a regex pattern that only allows numbers, operators, parentheses, and whitespace
+        allowed_pattern = r'^[\d+\-*/().\s]+$'
+        if not re.match(allowed_pattern, equation_str):
+            raise ValueError("Invalid characters in equation.")
 
-def generate_prompts(df):
-    return df['prompt'].apply(lambda x: x[0]['content']).tolist()
+        # Evaluate the equation with restricted globals and locals
+        result = eval(equation_str, {"__builtins__": None}, {})
+        return result
+    except Exception as e:
+        return None
 
-def main(filename='train.parquet'):
-    # Load your DataFrame here
-    df = pd.read_parquet(filename)
-
-    START_IDX = 0
-    END_IDX = 1024
-
-    df = df.iloc[START_IDX:END_IDX]
+def compute_score(solution_str, ground_truth, method='strict', format_score=0.1, score=1.):
+    """The scoring function for countdown task.
     
-    df['nums'] = df['nums'].apply(lambda x: [int(num) for num in x])
+    Args:
+        solution_str: the solution text
+        ground_truth: dictionary containing target number and available numbers
+        method: the method to extract the solution
+        format_score: the score for correct format but wrong answer
+        score: the score for the correct answer
+    """
+    target = ground_truth['target']
+    numbers = ground_truth['numbers']
     
-    DATASET_SIZE = len(df)
+    equation = extract_solution(solution_str=solution_str)
+    do_print = random.randint(1, 64) == 1
     
-    llm_prompts = generate_prompts(df)
-    scores = [[None for _ in range(NUM_PASSES)] for _ in range(DATASET_SIZE)]
-    for i in range(0, len(llm_prompts), PROMPT_BATCH_SIZE):
-        batch_prompts = llm_prompts[i:i + PROMPT_BATCH_SIZE]
-        responses = generate_batch(batch_prompts)
-        flattened_responses = [item for sublist in responses for item in sublist]
+    if do_print:
+        print(f"--------------------------------")
+        print(f"Target: {target} | Numbers: {numbers}")
+        print(f"Extracted equation: {equation}")
+        print(f"Solution string: {solution_str}")
+
+    if equation is None:
+        if do_print:
+            print(f"No equation found")
+        return 0
+    
+    # Validate equation uses correct numbers
+    if not validate_equation(equation, numbers):
+        if do_print:
+            print(f"Invalid equation")
+        return format_score
         
-        ground_truth = df[['target', 'nums']].to_dict(orient='records')
-        
-        for idx, response in enumerate(flattened_responses):
-            row_idx = i + idx // NUM_PASSES
-            col_idx = idx % NUM_PASSES
+    # Evaluate equation
+    try:
+        result = evaluate_equation(equation)
+        if result is None:
+            if do_print:
+                print(f"Could not evaluate equation")
+            return format_score
             
-            solution_str = response
-            target = ground_truth[row_idx]['target']
-            numbers = ground_truth[row_idx]['nums']
-            
-            score = countdown_verifier.compute_score(
-                solution_str=solution_str,
-                ground_truth={'target': target, 'numbers': numbers},
-                method='strict',
-                format_score=0.1,
-                score=1.
-            )
-            
-            scores[row_idx][col_idx] = score
-        
-        # Save the scores to a file
-        scores_df = pd.DataFrame(scores)
-        scores_df.to_parquet('scores.parquet', index=False)
-        
-        pass_accuracy = (scores_df.sum(axis=1) > 0.1).mean()
-        print(f"Pass accuracy: {pass_accuracy:.4f}")
-        
-        
-if __name__ == "__main__":
-    main()
+        if abs(result - target) < 1e-5:  # Account for floating point precision
+            if do_print:
+                print(f"Correct equation: {equation} = {result}")
+            return score
+        else:
+            if do_print:
+                print(f"Wrong result: equation = {result}, target = {target}")
+            return format_score
+    except:
+        if do_print:
+            print(f"Error evaluating equation")
+        return format_score 
