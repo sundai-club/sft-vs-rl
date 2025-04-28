@@ -1,2 +1,2 @@
 # sft-vs-rl
-We evaluate if distillation from a larger model unlocks new capabilities
+We evaluate the limitations of RL by comparing it to pass@k performance.
